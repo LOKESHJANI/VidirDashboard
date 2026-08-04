@@ -1,0 +1,93 @@
+@page "/"
+@using Microsoft.AspNetCore.SignalR.Client
+@using VidirDashboard.Application.DTOs
+@using VidirDashboard.Application.Services
+@inject MachineQueryService QueryService
+@inject NavigationManager NavManager
+@implements IAsyncDisposable
+
+<h1>Machine Status</h1>
+
+@if (_status is null)
+{
+    <p>Loading...</p>
+}
+else
+{
+    <p>
+        Machine: <strong>@_status.Name</strong> —
+        Status: <strong>@_status.Status</strong> —
+        Last updated: @_status.LastUpdatedUtc.ToLocalTime()
+    </p>
+
+    <div class="bin-grid">
+        @foreach (var bin in _status.Bins.OrderBy(b => b.Position))
+        {
+            <div class="bin @(bin.Occupied ? "occupied" : "empty")">
+                <div>Pos @bin.Position</div>
+                <div>@(bin.Occupied ? bin.SkuLabel : "Empty")</div>
+            </div>
+        }
+    </div>
+}
+
+<h2>Live Event Log</h2>
+<ul>
+    @foreach (var entry in _events.TakeLast(10).Reverse())
+    {
+        <li>@entry</li>
+    }
+</ul>
+
+<style>
+    .bin-grid { display: flex; flex-wrap: wrap; gap: 8px; }
+    .bin { border: 1px solid #ccc; border-radius: 4px; padding: 8px; width: 100px; text-align: center; }
+    .bin.occupied { background-color: #d4edda; }
+    .bin.empty { background-color: #f8f9fa; }
+</style>
+
+@code {
+    private MachineStatusDto? _status;
+    private HubConnection? _hubConnection;
+    private readonly List<string> _events = new();
+    private const int MachineId = 1;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _status = await QueryService.GetMachineStatusAsync(MachineId);
+
+        _hubConnection = new HubConnectionBuilder()
+            .WithUrl(NavManager.ToAbsoluteUri("/machineHub"))
+            .WithAutomaticReconnect()
+            .Build();
+
+        _hubConnection.On<MachineStatusDto>("MachineStatusChanged", status =>
+        {
+            if (status.MachineId == MachineId)
+            {
+                _status = status;
+                _events.Add($"{DateTime.Now:T} - Status updated ({status.Status})");
+                InvokeAsync(StateHasChanged);
+            }
+        });
+
+        _hubConnection.On<int, string, string>("MachineFaultRaised", (machineId, code, message) =>
+        {
+            if (machineId == MachineId)
+            {
+                _events.Add($"{DateTime.Now:T} - FAULT {code}: {message}");
+                InvokeAsync(StateHasChanged);
+            }
+        });
+
+        await _hubConnection.StartAsync();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_hubConnection is not null)
+        {
+            await _hubConnection.DisposeAsync();
+        }
+    }
+}
