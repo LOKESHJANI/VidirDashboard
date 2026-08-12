@@ -1,3 +1,4 @@
+using Web.Components;
 using Microsoft.EntityFrameworkCore;
 using VidirDashboard.Application.Interfaces;
 using VidirDashboard.Application.Services;
@@ -43,7 +44,7 @@ app.UseAntiforgery();
 
 app.MapControllers();
 app.MapHub<MachineHub>("/machineHub");
-app.MapRazorComponents<VidirDashboard.Web.Components.App>()
+app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
 app.Run();
